@@ -1,0 +1,8 @@
+{
+  "verbose": true,
+  "ignore": ["*.test.js", "*.spec.js"],
+  "delay": "1500",
+  "events": {
+    "restart": "taskkill /F /IM node.exe || true"
+  }
+} 
