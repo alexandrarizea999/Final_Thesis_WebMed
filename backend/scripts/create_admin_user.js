@@ -8,7 +8,7 @@ const { sequelize } = require('../config/database');
 // Admin user details
 const adminUser = {
   email: 'admin@example.com',
-  password: 'Admin123!', // This should be changed after first login
+  password: 'Admin123!', 
   role: 'admin',
   profile: {
     first_name: 'Admin',

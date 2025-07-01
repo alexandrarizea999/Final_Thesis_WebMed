@@ -34,6 +34,28 @@
         {{ error }}
       </div>
       
+      <div v-else-if="!accessCodeEntered" class="access-form-container">
+        <p class="form-description">
+          Introduceți codul de acces pentru a vedea rezultatele analizelor dvs. medicale.
+        </p>
+        <form @submit.prevent="submitAccessCode" class="access-form">
+          <div class="form-group">
+            <label for="accessCode">Cod de acces:</label>
+            <input 
+              type="text" 
+              id="accessCode" 
+              v-model="accessCode" 
+              placeholder="Introduceți codul primit de la medic"
+              required
+              autocomplete="off"
+            >
+          </div>
+          <button type="submit" class="access-btn" :disabled="!accessCode">
+            Accesează Rezultatele
+          </button>
+        </form>
+      </div>
+      
       <div v-else-if="tests.length === 0" class="no-tests">
         <p>Nu aveți încă analize medicale înregistrate.</p>
       </div>
@@ -185,7 +207,9 @@ export default {
       error: null,
       isMobileView: false,
       activeTab: 'medical-tests',
-      userData: null
+      userData: null,
+      accessCode: '',
+      accessCodeEntered: false
     };
   },
   async created() {
@@ -219,7 +243,44 @@ export default {
       this.activeTab = tab;
     },
     
+    async submitAccessCode() {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          this.error = 'Vă rugăm să vă autentificați pentru a vedea rezultatele analizelor.';
+          return;
+        }
+
+        this.loading = true;
+        const response = await axios.get(`http://localhost:5000/api/medical-tests/my-tests?accessCode=${this.accessCode}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        this.tests = response.data;
+        this.accessCodeEntered = true;
+        this.loading = false;
+      } catch (error) {
+        console.error('Eroare la încărcarea analizelor:', error);
+        if (error.response && error.response.status === 400) {
+          this.error = 'Codul de acces este obligatoriu.';
+        } else if (error.response && error.response.status === 404) {
+          this.error = 'Cod de acces invalid. Vă rugăm verificați și încercați din nou.';
+        } else {
+          this.error = 'Nu s-au putut încărca analizele. Vă rugăm să încercați din nou.';
+        }
+        this.loading = false;
+      }
+    },
+    
     async fetchTests() {
+      if (this.userData && this.userData.role === 'patient') {
+        // For patients, we'll wait for access code submission
+        this.loading = false;
+        return;
+      }
+      
       try {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -732,5 +793,70 @@ tr.abnormal td.value {
   .info-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.access-form-container {
+  max-width: 500px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.form-description {
+  margin-bottom: 1.5rem;
+  color: #666;
+  text-align: center;
+}
+
+.access-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.access-btn {
+  padding: 0.75rem 1.5rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.access-btn:hover {
+  background-color: #0056b3;
+}
+
+.access-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: #dc3545;
+  text-align: center;
+  margin: 1rem 0;
 }
 </style> 

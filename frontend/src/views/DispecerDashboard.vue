@@ -281,27 +281,28 @@
                   <th>ID</th>
                   <th>Patient</th>
                   <th>Test Type</th>
+                  <th>Category</th>
                   <th>Date</th>
-                  <th>Status</th>
+                  <th>Patient Type</th>
                   <th>Results</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="test in filteredTests" :key="test.id">
                   <td>{{ test.id }}</td>
-                  <td>{{ test.patient_name }}</td>
+                  <td>{{ test.patient_email }}</td>
                   <td>{{ test.test_type }}</td>
+                  <td>{{ test.test_category }}</td>
                   <td>{{ formatDate(test.test_date) }}</td>
                   <td>
                     <span 
                       class="status-badge" 
                       :class="{
-                        'status-pending': test.status === 'pending',
-                        'status-completed': test.status === 'completed',
-                        'status-cancelled': test.status === 'cancelled'
+                        'status-visitor': test.patient_type === 'visitor',
+                        'status-registered': test.patient_type === 'registered'
                       }"
                     >
-                      {{ test.status }}
+                      {{ test.patient_type }}
                     </span>
                   </td>
                   <td class="truncate">{{ test.results || 'No results yet' }}</td>
@@ -1023,22 +1024,21 @@ label {
 }
 
 .status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
   font-weight: 500;
   text-transform: capitalize;
 }
 
-.status-badge::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 8px;
+.status-visitor {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-registered {
+  background-color: #e0e7ff;
+  color: #3730a3;
 }
 
 .status-scheduled, .status-pending {

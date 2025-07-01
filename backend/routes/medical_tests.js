@@ -53,12 +53,15 @@ router.post('/', auth, async (req, res) => {
     if (req.user.role !== 'doctor') {
       return res.status(403).json({ message: 'Acces interzis. Doar medicii pot adăuga analize medicale.' });
     }
+
     const { patientId, testDate, testName, testCategory, notes, parameters } = req.body;
+
+    // Verificare date primite
     if (!patientId || !testDate || !testName || !testCategory || !parameters || !Array.isArray(parameters) || parameters.length === 0) {
       return res.status(400).json({ message: 'Date incomplete. Vă rugăm completați toate câmpurile obligatorii.' });
     }
-    const isVisitor = patientId.toString().startsWith('visitor_');
-    let visitorId = null;
+
+    // Generează un cod unic de acces pentru test (8 caractere alfanumerice)
     const generateAccessCode = () => {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
       let code = '';
@@ -67,110 +70,76 @@ router.post('/', auth, async (req, res) => {
       }
       return code;
     };
+
     const accessCode = generateAccessCode();
+    const isVisitor = patientId.toString().startsWith('visitor_');
+
     if (isVisitor) {
-      visitorId = patientId.toString().replace('visitor_', '');
+      const visitorId = patientId.toString().replace('visitor_', '');
       console.log("Getting visitor details for ID:", visitorId);
-      const visitor = await sequelize.query(
-        `SELECT "firstName", "lastName", "email", "phone" FROM "visitor_appointments" WHERE "id" = :visitorId`,
+      
+      // Get visitor details
+      const [visitor] = await sequelize.query(
+        `SELECT "firstName", "lastName", "email", "phone" FROM visitor_appointments WHERE id = :visitorId`,
         { 
           replacements: { visitorId },
           type: QueryTypes.SELECT
         }
       );
-      console.log("Visitor query result:", visitor);
-      if (visitor && visitor.length > 0) {
-        const [visitorTestResult] = await sequelize.query(
-          `INSERT INTO visitor_medical_tests 
-          (visitor_id, doctor_id, visitor_email, visitor_phone, visitor_name, test_date, test_name, test_category, notes, access_code) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          {
-            replacements: [
-              visitorId,
-              req.user.userId,
-              visitor[0].email,
-              visitor[0].phone,
-              `${visitor[0].firstName} ${visitor[0].lastName}`,
-              testDate,
-              testName,
-              testCategory,
-              notes || null,
-              accessCode
-            ],
-            type: QueryTypes.INSERT
-          }
-        );
-        const visitorTestId = visitorTestResult;
-        const testParams = [];
-        for (const param of parameters) {
-          let isNormal = true;
-          if (param.minReference !== null && param.maxReference !== null) {
-            isNormal = param.value >= param.minReference && param.value <= param.maxReference;
-          }
-          await sequelize.query(
-            `INSERT INTO visitor_test_parameters 
-            (test_id, parameter_name, value, unit, min_reference, max_reference, is_normal) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            {
-              replacements: [
-                visitorTestId,
-                param.name,
-                param.value,
-                param.unit,
-                param.minReference || null,
-                param.maxReference || null,
-                isNormal
-              ],
-              type: QueryTypes.INSERT
-            }
-          );
-          testParams.push({
-            parameter_name: param.name,
-            value: param.value,
-            unit: param.unit,
-            min_reference: param.minReference,
-            max_reference: param.maxReference,
-            is_normal: isNormal
-          });
-        }
-        res.status(201).json({
-          message: 'Analiză medicală adăugată cu succes',
-          medicalTest: {
-            id: visitorTestId,
-            test_date: testDate,
-            test_name: testName,
-            test_category: testCategory,
-            notes: notes
-          },
-          parameters: testParams,
-          accessCode: accessCode,
-          patientDetails: {
-            name: `${visitor[0].firstName} ${visitor[0].lastName}`,
-            email: visitor[0].email,
-            phone: visitor[0].phone
-          }
-        });
-      } else {
-        return res.status(404).json({ message: 'Visitor not found' });
+
+      if (!visitor) {
+        return res.status(404).json({ message: 'Vizitator negăsit' });
       }
-    } else {
-      const medicalTest = await MedicalTest.create({
-        patient_id: patientId,
-        doctor_id: req.user.userId,
-        test_date: testDate,
-        test_name: testName,
-        test_category: testCategory,
-        notes: notes,
-        access_code: accessCode
-      });
+
+      // Insert into visitor_medical_tests
+      const [visitorTestId] = await sequelize.query(
+        `INSERT INTO visitor_medical_tests 
+        (visitor_id, doctor_id, visitor_email, visitor_phone, visitor_name, test_date, test_name, test_category, notes, access_code) 
+        VALUES (:visitorId, :doctorId, :email, :phone, :name, :testDate, :testName, :testCategory, :notes, :accessCode)`,
+        {
+          replacements: {
+            visitorId,
+            doctorId: req.user.userId,
+            email: visitor.email,
+            phone: visitor.phone,
+            name: `${visitor.firstName} ${visitor.lastName}`,
+            testDate,
+            testName,
+            testCategory,
+            notes: notes || null,
+            accessCode
+          },
+          type: QueryTypes.INSERT
+        }
+      );
+
+      // Add test parameters
       const testParams = [];
       for (const param of parameters) {
         let isNormal = true;
         if (param.minReference !== null && param.maxReference !== null) {
           isNormal = param.value >= param.minReference && param.value <= param.maxReference;
         }
-        const testParam = await TestParameter.create({
-          test_id: medicalTest.id,
+
+        await sequelize.query(
+          `INSERT INTO visitor_test_parameters 
+          (test_id, parameter_name, value, unit, min_reference, max_reference, is_normal) 
+          VALUES (:testId, :name, :value, :unit, :minRef, :maxRef, :isNormal)`,
+          {
+            replacements: {
+              testId: visitorTestId,
+              name: param.name,
+              value: param.value,
+              unit: param.unit,
+              minRef: param.minReference || null,
+              maxRef: param.maxReference || null,
+              isNormal
+            },
+            type: QueryTypes.INSERT
+          }
+        );
+
+        testParams.push({
           parameter_name: param.name,
           value: param.value,
           unit: param.unit,
@@ -178,15 +147,62 @@ router.post('/', auth, async (req, res) => {
           max_reference: param.maxReference,
           is_normal: isNormal
         });
-        testParams.push(testParam);
       }
-      res.status(201).json({
+
+      return res.status(201).json({
         message: 'Analiză medicală adăugată cu succes',
-        medicalTest,
+        medicalTest: {
+          id: visitorTestId,
+          test_date: testDate,
+          test_name: testName,
+          test_category: testCategory,
+          notes: notes,
+          visitor_name: `${visitor.firstName} ${visitor.lastName}`,
+          visitor_email: visitor.email,
+          visitor_phone: visitor.phone
+        },
         parameters: testParams,
         accessCode: accessCode
       });
     }
+
+    // For registered patients
+    const medicalTest = await MedicalTest.create({
+      patient_id: patientId,
+      doctor_id: req.user.userId,
+      test_date: testDate,
+      test_name: testName,
+      test_category: testCategory,
+      notes: notes,
+      access_code: accessCode
+    });
+
+    // Add test parameters
+    const testParams = [];
+    for (const param of parameters) {
+      let isNormal = true;
+      if (param.minReference !== null && param.maxReference !== null) {
+        isNormal = param.value >= param.minReference && param.value <= param.maxReference;
+      }
+
+      const testParam = await TestParameter.create({
+        test_id: medicalTest.id,
+        parameter_name: param.name,
+        value: param.value,
+        unit: param.unit,
+        min_reference: param.minReference,
+        max_reference: param.maxReference,
+        is_normal: isNormal
+      });
+      testParams.push(testParam);
+    }
+
+    res.status(201).json({
+      message: 'Analiză medicală adăugată cu succes',
+      medicalTest,
+      parameters: testParams,
+      accessCode: accessCode
+    });
   } catch (error) {
     console.error('Eroare la adăugarea analizei medicale:', error);
     res.status(500).json({ message: 'Eroare la adăugarea analizei medicale', error: error.message });
@@ -194,13 +210,35 @@ router.post('/', auth, async (req, res) => {
 });
 router.get('/my-tests', auth, async (req, res) => {
   try {
+    const { accessCode } = req.query;
     const patientId = req.user.userId;
+
+    // If user is a patient, require access code
+    if (req.user.role === 'patient') {
+      if (!accessCode) {
+        return res.status(400).json({ message: 'Codul de acces este obligatoriu pentru vizualizarea rezultatelor.' });
+      }
+
+      const medicalTest = await MedicalTest.findOne({
+        where: { 
+          patient_id: patientId,
+          access_code: accessCode
+        },
+        include: [{ model: TestParameter }]
+      });
+
+      if (!medicalTest) {
+        return res.status(404).json({ message: 'Test medical negăsit sau cod de acces invalid.' });
+      }
+
+      return res.json([medicalTest]); // Return as array to maintain compatibility
+    }
+
+    // For doctors, return all tests without requiring access code
     const medicalTests = await MedicalTest.findAll({
       where: { patient_id: patientId },
       order: [['test_date', 'DESC']],
-      include: [
-        { model: TestParameter }
-      ]
+      include: [{ model: TestParameter }]
     });
     res.json(medicalTests);
   } catch (error) {
@@ -232,41 +270,51 @@ router.get('/my-tests/:testId', auth, async (req, res) => {
 });
 router.get('/access/:accessCode', async (req, res) => {
   try {
-    const { accessCode } = req.params; 
+    const { accessCode } = req.params;
+    
     if (!accessCode) {
       return res.status(400).json({ message: 'Codul de acces este obligatoriu' });
     }
+
+    // First try to find in regular medical tests
     const medicalTest = await MedicalTest.findOne({
       where: { access_code: accessCode },
-      include: [
-        { model: TestParameter }
-      ]
+      include: [{ model: TestParameter }]
     });
+
     if (medicalTest) {
       return res.json(medicalTest);
     }
+
+    // If not found in regular tests, check visitor tests
     const [visitorTest] = await sequelize.query(
-      `SELECT * FROM visitor_medical_tests WHERE access_code = ?`,
+      `SELECT * FROM visitor_medical_tests WHERE access_code = :accessCode`,
       {
-        replacements: [accessCode],
+        replacements: { accessCode },
         type: QueryTypes.SELECT
       }
     );
+
     if (!visitorTest) {
       return res.status(404).json({ message: 'Test medical negăsit. Verificați codul de acces.' });
     }
+
+    // Get visitor test parameters
     const [visitorParams] = await sequelize.query(
-      `SELECT * FROM visitor_test_parameters WHERE test_id = ?`,
+      `SELECT * FROM visitor_test_parameters WHERE test_id = :testId`,
       {
-        replacements: [visitorTest.id],
-        type: QueryTypes.SELECT,
-        nest: true
+        replacements: { testId: visitorTest.id },
+        type: QueryTypes.SELECT
       }
     );
+
+    // Format the response to match the regular medical test structure
     const formattedTest = {
       ...visitorTest,
-      test_parameters: visitorParams || []
+      TestParameters: Array.isArray(visitorParams) ? visitorParams : [visitorParams],
+      is_visitor: true
     };
+
     res.json(formattedTest);
   } catch (error) {
     console.error('Eroare la obținerea testului medical:', error);
@@ -388,24 +436,41 @@ router.get('/all', auth, async (req, res) => {
     return res.status(403).json({ message: 'Access denied. Dispatcher or admin only.' });
   }
   try {
-    const [tests] = await sequelize.query(`
-      SELECT mt.id, mt.test_date, mt.test_type, mt.status, mt.results,
-             p.email as patient_email
+    // Get regular medical tests
+    const [regularTests] = await sequelize.query(`
+      SELECT 
+        mt.id,
+        mt.test_date,
+        mt.test_name as test_type,
+        mt.test_category,
+        mt.notes as results,
+        p.email as patient_email,
+        'registered' as patient_type
       FROM medical_tests mt
       LEFT JOIN users p ON mt.patient_id = p.id
-      ORDER BY mt.test_date DESC
     `);
-    const formattedTests = tests.map(test => ({
-      id: test.id,
-      test_date: test.test_date,
-      test_type: test.test_type,
-      status: test.status,
-      results: test.results,
-      patient_name: test.patient_email ? test.patient_email.split('@')[0] : 'Unknown Patient'
-    }));
-    res.json(formattedTests);
+
+    // Get visitor medical tests
+    const [visitorTests] = await sequelize.query(`
+      SELECT 
+        vmt.id,
+        vmt.test_date,
+        vmt.test_name as test_type,
+        vmt.test_category,
+        vmt.notes as results,
+        vmt.visitor_email as patient_email,
+        'visitor' as patient_type
+      FROM visitor_medical_tests vmt
+    `);
+
+    // Combine and sort all tests
+    const allTests = [...regularTests, ...visitorTests].sort((a, b) => 
+      new Date(b.test_date) - new Date(a.test_date)
+    );
+
+    res.json(allTests);
   } catch (error) {
-    console.error('Error fetching all medical tests:', error);
+    console.error('Error fetching medical tests:', error);
     res.status(500).json({ message: 'Error fetching medical tests' });
   }
 });

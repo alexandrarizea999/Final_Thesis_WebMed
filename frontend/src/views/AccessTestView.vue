@@ -25,62 +25,32 @@
     </div>
     <div v-else class="test-results">
       <div class="test-header">
-        <h3>{{ test.test_name }}</h3>
-        <div class="test-meta">
-          <div class="meta-item date">
-            <span class="label">Data:</span>
-            <span class="value">{{ formatDate(test.test_date) }}</span>
+        <h3>Rezultate Analize Medicale</h3>
+        <div class="test-info">
+          <p><strong>Data:</strong> {{ formatDate(test.test_date) }}</p>
+          <p><strong>Tip Analiză:</strong> {{ test.test_name }}</p>
+          <p><strong>Categorie:</strong> {{ test.test_category }}</p>
+          <p v-if="test.notes"><strong>Observații:</strong> {{ test.notes }}</p>
+        </div>
+      </div>
+
+      <div class="parameters-section">
+        <h4>Parametri Analizați</h4>
+        <div class="parameters-list">
+          <div v-for="param in testParameters" :key="param.parameter_name" 
+               :class="['parameter-item', { 'abnormal': !param.is_normal }]">
+            <div class="parameter-name">{{ param.parameter_name }}</div>
+            <div class="parameter-value">{{ param.value }} {{ param.unit }}</div>
+            <div v-if="param.min_reference !== null && param.max_reference !== null" class="reference-range">
+              Interval de referință: {{ param.min_reference }} - {{ param.max_reference }} {{ param.unit }}
+            </div>
+            <div class="status-indicator" :class="{ 'abnormal': !param.is_normal }">
+              {{ param.is_normal ? 'Normal' : 'Anormal' }}
+            </div>
           </div>
-          <div class="meta-item category">
-            <span class="label">Categorie:</span>
-            <span class="value">{{ test.test_category }}</span>
-          </div>
         </div>
       </div>
-      <div v-if="test.notes" class="test-notes">
-        <strong>Observații:</strong> {{ test.notes }}
-      </div>
-      
-      <div class="parameters-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Parametru</th>
-              <th>Valoare</th>
-              <th>Unitate</th>
-              <th>Valori de referință</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr 
-              v-for="param in test.TestParameters" 
-              :key="param.id"
-              :class="{ 'abnormal': !param.is_normal }"
-            >
-              <td>{{ param.parameter_name }}</td>
-              <td class="value">{{ param.value }}</td>
-              <td>{{ param.unit }}</td>
-              <td class="reference">
-                <template v-if="param.min_reference !== null && param.max_reference !== null">
-                  {{ param.min_reference }} - {{ param.max_reference }}
-                </template>
-                <template v-else>
-                  -
-                </template>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="legend">
-        <div class="legend-item">
-          <span class="legend-indicator normal"></span> Valoare normală
-        </div>
-        <div class="legend-item">
-          <span class="legend-indicator abnormal"></span> Valoare anormală
-        </div>
-      </div>
-      
+
       <button @click="resetForm" class="back-btn">
         Înapoi
       </button>
@@ -97,6 +67,13 @@ export default {
       test: null,
       error: null
     };
+  },
+  computed: {
+    testParameters() {
+      if (!this.test) return [];
+      // Handle both regular and visitor test parameters
+      return this.test.TestParameters || this.test.test_parameters || [];
+    }
   },
   methods: {
     async fetchTest() {
@@ -240,7 +217,7 @@ input:focus {
   font-size: 1.8rem;
 }
 
-.test-meta {
+.test-info {
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
@@ -261,16 +238,7 @@ input:focus {
   color: #333;
 }
 
-.test-notes {
-  margin: 20px 0;
-  padding: 15px;
-  background: #fff8f8;
-  border-radius: 8px;
-  border-left: 3px solid #f0ad4e;
-  font-style: italic;
-}
-
-.parameters-table {
+.parameters-section {
   margin: 25px 0;
   background: white;
   border-radius: 8px;
@@ -278,69 +246,56 @@ input:focus {
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+.parameters-list {
+  padding: 15px;
 }
 
-th {
-  background-color: #f5f5f5;
-  padding: 12px 15px;
-  text-align: left;
+.parameter-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.parameter-item:last-child {
+  border-bottom: none;
+}
+
+.parameter-name {
   font-weight: 600;
   color: #333;
 }
 
-td {
-  padding: 12px 15px;
-  border-bottom: 1px solid #eee;
+.parameter-value {
+  color: #666;
 }
 
-tr:last-child td {
-  border-bottom: none;
+.reference-range {
+  color: #666;
+  font-size: 0.9em;
 }
 
-tr.abnormal {
+.status-indicator {
+  padding: 5px 10px;
+  border-radius: 5px;
+  background-color: #f0f0f0;
+  color: #666;
+}
+
+.status-indicator.abnormal {
   background-color: #fff0f0;
-}
-
-tr.abnormal td.value {
   color: #dc3545;
-  font-weight: 600;
 }
 
-.reference {
-  color: #666;
-  font-size: 0.9em;
+.visitor-info {
+  display: none;
 }
 
-.legend {
-  display: flex;
-  gap: 20px;
-  margin: 20px 0;
-  font-size: 0.9em;
-  color: #666;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.legend-indicator {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.legend-indicator.normal {
-  background-color: #28a745;
-}
-
-.legend-indicator.abnormal {
-  background-color: #dc3545;
+.visitor-info h4,
+.visitor-info p,
+.visitor-info strong {
+  display: none;
 }
 
 .back-btn {
@@ -368,7 +323,7 @@ tr.abnormal td.value {
 }
 
 @media (max-width: 768px) {
-  .test-meta {
+  .test-info {
     flex-direction: column;
     gap: 10px;
   }
